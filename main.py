@@ -68,7 +68,7 @@ def get_gate(line):
         return None, None, None
 
 
-def circuit_parsing(file_name, ret_fault_list=False):
+def circuit_parsing(file_name, ret_fault_list=False, ret_levelization_dict=False):
     """
     circuit_parsing is a function in charge of, given a text file that describes a circuit benchmark, modelling the
     circuit with a graph. The directed graph models the input, output and internal nodes with the node set, while
@@ -87,6 +87,8 @@ def circuit_parsing(file_name, ret_fault_list=False):
     list_output_node = []
     # dictionary for the full fault list
     fault_list_dict = {}
+    # dictionary for the levelization
+    levelization_dict = {}
     # Directed Graph for circuit modelling
     graph_circuit = nx.DiGraph()
     # Symbol table to map each node and its type (can be either INPUT, OUTPUT, or the gate type)
@@ -199,5 +201,9 @@ def main():
     # print the full fault list
     print_faults(dict_fault_list)
 
+
+    # levelization
+    # add levelization flag to circuit_parsing
+    #print(nx.shortest_path_length(graph_circuit, source='a', target='y'))
 
 main()
