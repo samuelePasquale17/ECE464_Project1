@@ -46,8 +46,8 @@ for gate in GateType:
         # adding all the gate types to the regex pattern
         gate_type_patter += gate.name.lower() + '|'
 
+
 gate_type_patter = re.compile(gate_type_patter, re.IGNORECASE)
-print(gate_type_patter)
 
 
 def get_input(line):
@@ -268,9 +268,9 @@ def circuit_parsing(file_name, ret_fault_list=False, ret_levelization_dict=False
             if ret_fault_list:
                 # add faults to fault list
                 if input not in fault_dict:
-                    fault_dict[input] = []
-                fault_dict[input].append(input + "-0")
-                fault_dict[input].append(input + "-1")
+                    fault_dict[input] = set()
+                fault_dict[input].add(input + "-0")
+                fault_dict[input].add(input + "-1")
 
         # check if it is an output
         elif bool(re.match(output_pattern, line, re.IGNORECASE)):
@@ -282,9 +282,9 @@ def circuit_parsing(file_name, ret_fault_list=False, ret_levelization_dict=False
             if ret_fault_list:
                 # add faults to fault list
                 if output not in fault_dict:
-                    fault_dict[output] = []
-                fault_dict[output].append(output + "-OUT-0")
-                fault_dict[output].append(output + "-OUT-1")
+                    fault_dict[output] = set()
+                fault_dict[output].add(output + "-OUT-0")
+                fault_dict[output].add(output + "-OUT-1")
 
         # check if it is not empty, or it is a comment
         elif line.strip() and line[0] != '#':
@@ -295,9 +295,9 @@ def circuit_parsing(file_name, ret_fault_list=False, ret_levelization_dict=False
             if ret_fault_list:
                 # add faults to fault list
                 if output_node not in fault_dict:
-                    fault_dict[output_node] = []
-                fault_dict[output_node].append(output_node + "-0")
-                fault_dict[output_node].append(output_node + "-1")
+                    fault_dict[output_node] = set()
+                fault_dict[output_node].add(output_node + "-0")
+                fault_dict[output_node].add(output_node + "-1")
 
             # update gate type
             symbol_table_nodes[output_node] = gate_type
@@ -333,9 +333,9 @@ def circuit_parsing(file_name, ret_fault_list=False, ret_levelization_dict=False
                     for node_f in list_inputs:
                         if node_f != output_node and node_f + "-" + output_node + "-0" not in list(chain.from_iterable(fault_dict.values())):
                             if node_f not in fault_dict:
-                                fault_dict[node_f] = []
-                            fault_dict[node_f].append(node_f + "-" + output_node + "-0")
-                            fault_dict[node_f].append(node_f + "-" + output_node + "-1")
+                                fault_dict[node_f] = set()
+                            fault_dict[output_node].add(output_node + "-" + node_f + "-0")
+                            fault_dict[output_node].add(output_node + "-" + node_f + "-1")
 
     f.close()  # close the file
 
@@ -360,7 +360,7 @@ def circuit_parsing(file_name, ret_fault_list=False, ret_levelization_dict=False
         return graph_circuit, symbol_table_nodes, list_input_node, list_output_node, None, None
 
 
-def simulation(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv):
+def simulation(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv, fault_enable=False, fault_value=None):
     """
     Function that given the circuit, its levelization, and an input vector, simulates the circuit behavior and returns
     the output boolean values
@@ -370,6 +370,8 @@ def simulation(graph_circuit, list_input_node, list_output_node, symbol_table_no
     :param symbol_table_nodes: symbol table nodes, representing the graph
     :param dict_levelization: dictionary that has all the nodes as keys and their levels as values
     :param tv: input test vector
+    :param fault_enable: flag that if active makes the simulation sensible to fault value
+    :param fault_value: string representing the fault that has to be considered over the simulation
     :return: dictionary that has output pins as keys and their boolean values associated accordingly
     """
     # dictionary that keeps track of the boolean values for each node
@@ -380,18 +382,71 @@ def simulation(graph_circuit, list_input_node, list_output_node, symbol_table_no
         # assign boolean values based on the test vector
         boolean_values[list_input_node[i]] = bool(int(tv[i]))
 
+    # check if is needed to set a fault
+    if fault_enable:
+        # check if fault at the input, output or at the output of a gate
+        if len(fault_value.split("-")) == 2 or ( len(fault_value.split("-")) == 3 and fault_value.split("-")[1] == "OUT"):
+            # add the fault value
+            if fault_value.split("-")[len(fault_value.split("-")) - 1] == "1":
+                boolean_values[fault_value.split("-")[0]] = True
+            else:
+                boolean_values[fault_value.split("-")[0]] = False
+
+
     # run over one level at a time
     for i in range(1, max(dict_levelization.values()) + 1):
         # compute for each node of the level the boolean value
         for node in list(filter(lambda key: dict_levelization[key] == i, dict_levelization)):
             # get the gate type
             gate_type = get_gate_type(symbol_table_nodes[node])
-            # get the input values
-            inputs = []
-            for input_node in graph_circuit.predecessors(node):
-                inputs.append(boolean_values[input_node])
             # compute the boolean value
-            boolean_values[node] = get_output_gate(inputs, gate_type)
+            # check if fault enabled
+            if fault_enable:
+                # check if a fault occurs at the inputs
+                if node == fault_value.split("-")[0] and len(fault_value.split("-")) == 3 and fault_value.split("-")[1] != "OUT":
+                    # get the input values
+                    inputs = []
+                    for input_node in graph_circuit.predecessors(node):
+                        # check if it is the faulty input
+                        if input_node == fault_value.split("-")[1]:
+                            if fault_value.split("-")[len(fault_value.split("-")) - 1] == "1":
+                                inputs.append(True)
+                            else:
+                                inputs.append(False)
+                        else:
+                            # not the faulty input
+                            inputs.append(boolean_values[input_node])
+
+                    # compute the boolean value with the faulty input value
+                    out_val = get_output_gate(inputs, gate_type)
+
+
+                else:
+                    # get the input values
+                    inputs = []
+                    for input_node in graph_circuit.predecessors(node):
+                        inputs.append(boolean_values[input_node])
+                    # compute the boolean value
+                    out_val = get_output_gate(inputs, gate_type)
+
+            else:
+                # get the input values
+                inputs = []
+                for input_node in graph_circuit.predecessors(node):
+                    inputs.append(boolean_values[input_node])
+                # compute the boolean value
+                out_val = get_output_gate(inputs, gate_type)
+
+            # check if fault is enabled
+            if fault_enable:
+                # check if the output has already computed, if yes means that it is a faulty node
+                if node not in boolean_values:
+                    # no fault at this point
+                    boolean_values[node] = out_val
+            else:
+                # no fault enabled
+                boolean_values[node] = out_val
+
 
     # return the output
     out = {}
@@ -428,7 +483,7 @@ def print_faults(dict_fault_list, bench_name):
     print(bench_name + " benchmark has " + str(len(list(chain.from_iterable(dict_fault_list.values())))) + " faults")
     for node in dict_fault_list:
         print("Node " + node + " faults:")
-        for fault in dict_fault_list[node]:
+        for fault in sorted(dict_fault_list[node], key=lambda x: (len(x), x)):
             print("    > " + fault)
 
 
@@ -473,49 +528,52 @@ def menu_get_TV(input_list):
 
 def menu_get_fault(dict_fault):
     """
-    This function allows the user to select a fault category from the provided dictionary and then choose a specific fault
-    from the list of faults associated with that category. It returns the selected fault as a string.
+    This function allows the user to select a fault node from the provided dictionary and then choose a specific fault
+    from the list of faults associated with that node. The faults are displayed in order of increasing length and then
+    alphabetically. It returns the selected fault as a string.
 
-    :param dict_fault: Dictionary where keys are fault categories and values are lists of faults
+    :param dict_fault: Dictionary where keys are fault nodes and values are lists of faults
     :return: A string representing the selected fault
     """
-    # Display available fault categories to the user
-    print("Available nodes:")
-    category_list = list(dict_fault.keys())
-    for idx, category in enumerate(category_list, start=1):
-        print(f"{idx}. {category}")
+    # Display available fault nodes to the user
+    print("Available fault nodes:")
+    node_list = list(dict_fault.keys())
+    for idx, node in enumerate(node_list, start=1):
+        print(f"{idx}. {node}")
 
-    # Ask the user to select a category
-    while True:
-        try:
-            category_choice = int(input("Select a node by number: ").strip())
-            if 1 <= category_choice <= len(category_list):
-                selected_category = category_list[category_choice - 1]
-                break
-            else:
-                print("Invalid selection. Please choose a valid node number.")
-        except ValueError:
-            print("Invalid input. Please enter a number.")
+    # Ask the user to select a node
+    node_choice = input("Select a node by number: ").strip()
+    while not node_choice.isdigit() or not (1 <= int(node_choice) <= len(node_list)):
+        print("Invalid selection. Please choose a valid node number.")
+        node_choice = input("Select a node by number: ").strip()
 
-    # Display faults within the selected category
-    print(f"Available faults for {selected_category}:")
-    fault_list = dict_fault[selected_category]
+    selected_node = node_list[int(node_choice) - 1]
+
+    # Sort faults by length and then alphabetically
+    fault_list = sorted(dict_fault[selected_node], key=lambda x: (len(x), x))
+
+    # Display sorted faults within the selected node
+    print(f"Available faults for {selected_node}:")
     for idx, fault in enumerate(fault_list, start=1):
         print(f"{idx}. {fault}")
 
     # Ask the user to select a specific fault
-    while True:
-        try:
-            fault_choice = int(input("Select a fault by number: ").strip())
-            if 1 <= fault_choice <= len(fault_list):
-                return fault_list[fault_choice - 1]
-            else:
-                print("Invalid selection. Please choose a valid fault number.")
-        except ValueError:
-            print("Invalid input. Please enter a number.")
+    fault_choice = input("Select a fault by number: ").strip()
+    while not fault_choice.isdigit() or not (1 <= int(fault_choice) <= len(fault_list)):
+        print("Invalid selection. Please choose a valid fault number.")
+        fault_choice = input("Select a fault by number: ").strip()
+
+    return fault_list[int(fault_choice) - 1]
 
 
 def fault_sim_menu(input_list, dict_fault):
+    """
+    Function that prints the menu for the fault simulation and gets the user choice
+    :param input_list: list of input nodes
+    :param dict_fault: faults of the circuit
+    :return:    the choice (1: Any TV any fault, 2: Any TV full fault list),
+                the test vector with bits with input_list order, fault selected
+    """
     # Ask the user to choose an option
     print("Please choose one of the following options:")
     print("1. Any TV any fault")
@@ -529,71 +587,197 @@ def fault_sim_menu(input_list, dict_fault):
             # ask for the TV
             tv = menu_get_TV(input_list)
             fault = menu_get_fault(dict_fault)
-            return choice, tv, fault
+            return 1, tv, fault
 
         elif choice == "2":
             # If the user selects the second option, ask for TV only
             tv = menu_get_TV(input_list)
-            return choice, tv, None
+            return 2, tv, None
 
         # error
         else:
             print("Invalid input. Please enter 1 or 2.")
 
 
+def res_cmp(res_no_fault, res_fault):
+    """
+    Function that given two simulation results, returns if they are different
+    :param res_no_fault: result for good circuit
+    :param res_fault: result for bad circuit
+    :return: True if they differ
+    """
+    detect = False
+    for node in res_no_fault:
+        if res_no_fault[node] != res_fault[node]:
+            return True
+
+    return detect
+
+
+def simulation_fault(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv, fault, file_name):
+    """
+    Function that given a circuit, runs the simulation with a given fault
+    :param graph_circuit: model of the circuit
+    :param list_input_node: list of input nodes
+    :param list_output_node: list of output nodes
+    :param symbol_table_nodes: symbol table of the graph that models the circuit
+    :param dict_levelization: levelization of the circuit
+    :param tv: test vector
+    :param fault: fault
+    :param file_name: name of the bench file
+    :return: if the fault was detected or not and the outcome of the good and bad simulation respectively
+    """
+    # run simulation without fault
+    res_no_fault = simulation(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization,
+                              tv)
+    # run simulation with fault
+    res_fault = simulation(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv,
+                           fault_enable=True, fault_value=fault)
+    # check if fault detected
+    detect = res_cmp(res_no_fault, res_fault)
+    # return if it has been detected or not, and the simulation results
+    return detect, res_no_fault, res_fault
+
+
+def init_menu(file_names):
+    """
+    This function displays a menu to the user with three options:
+    1. Fault listing
+    2. Circuit simulation
+    3. Fault simulation
+
+    After the user selects an option, it asks the user to choose a benchmark from the provided list.
+    The selected benchmark's name is stored in a variable called file_name, and the function allows
+    space for additional code to be executed based on the user's selection.
+
+    :param file_names: List of available benchmark file names
+    :return: None
+    """
+    # Display the main menu options
+    print("Please choose one of the following options:")
+    print("1. Fault listing")
+    print("2. Circuit simulation")
+    print("3. Fault simulation")
+
+    # Get the user's choice
+    choice = input("Enter 1, 2, or 3: ").strip()
+    while choice not in {"1", "2", "3"}:
+        print("Invalid selection. Please choose 1, 2, or 3.")
+        choice = input("Enter 1, 2, or 3: ").strip()
+
+    # Display the list of available benchmarks
+    print("\nAvailable benchmarks:")
+    for idx, name in enumerate(file_names, start=1):
+        print(f"{idx}. {name}")
+
+    # Get the user's benchmark selection
+    benchmark_choice = input("Select a benchmark by number: ").strip()
+    while not benchmark_choice.isdigit() or not (1 <= int(benchmark_choice) <= len(file_names)):
+        print("Invalid selection. Please choose a valid benchmark number.")
+        benchmark_choice = input("Select a benchmark by number: ").strip()
+
+    # Store the selected benchmark in file_name
+    file_name = file_names[int(benchmark_choice) - 1]
+
+    # Placeholder for additional code based on the user's main menu selection
+    if choice == "1":
+        # Fault list selection
+        # parsing the circuit
+        graph_circuit, symbol_table_nodes, list_input_node, list_output_node, fault_dict, dict_levelization = circuit_parsing(file_name, True, False)
+
+        # print the number of faults and the full fault list
+        print_faults(fault_dict, file_name)
+
+    elif choice == "2":
+        # Circuit simulation selection
+        # parsing the circuit
+        graph_circuit, symbol_table_nodes, list_input_node, list_output_node, fault_dict, dict_levelization = circuit_parsing(file_name, True, True)
+
+        # test vector
+        print("=" * 40)
+        print(file_name + " simulation")
+        tv = "0" * len(list_input_node)
+        # run the simulation
+        res0 = simulation(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv)
+        print_simulation_result(res0, list_input_node, tv)
+
+        tv = "1" * len(list_input_node)
+        # run the simulation
+        res1 = simulation(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv)
+        print_simulation_result(res1, list_input_node, tv)
+
+
+    elif choice == "3":
+        # Fault simulation selection
+        # parsing the circuit
+        graph_circuit, symbol_table_nodes, list_input_node, list_output_node, fault_dict, dict_levelization = circuit_parsing(file_name, True, True)
+
+        # print the menu and get the user choice for the fault simulation
+        choice, tv, fault = fault_sim_menu(list_input_node, fault_dict)
+        if choice == 1:
+            # Any TV any fault
+            # run simulation
+            detect, res_no_fault, res_fault = simulation_fault(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv, fault, file_name)
+            # print result of fault simulation
+            if detect:
+                print("In " + file_name + " " + fault + " is detected by TV(" + " ".join(list_input_node) + ") = " + tv)
+                print("Output without fault: ")
+                print_simulation_result(res_no_fault, list_input_node, tv)
+                print("Output with fault: ")
+                print_simulation_result(res_fault, list_input_node, tv)
+            else:
+                print("In " + file_name + " " + fault + " is NOT detected by TV(" + " ".join(
+                    list_input_node) + ") = " + tv)
+                print("Output without fault: ")
+                print_simulation_result(res_no_fault, list_input_node, tv)
+                print("Output with fault: ")
+                print_simulation_result(res_fault, list_input_node, tv)
+
+        else:
+            # Any TV full fault list
+
+            # list of string containing the messages of the result
+            res_out = [[], []]  # detected and not detected respectively
+            # cnt of total faults
+            fault_cnt = 0
+            # cnt of detected faults
+            det_cnt = 0
+            # iterate over all possible faults
+            for key in fault_dict:
+                for fault in fault_dict[key]:
+                    # run simulation
+                    detect, res_no_fault, res_fault = simulation_fault(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv, fault, file_name)
+                    fault_cnt += 1
+                    if detect:
+                        # fault detected
+                        res_out[0].append("    > " + fault + " fault is detected")
+                        # increment number of detected faults
+                        det_cnt += 1
+                    else:
+                        # fault not detected
+                        res_out[1].append("    > " + fault + " fault is NOT detected")
+
+            # print result
+            print("In " + file_name + ", given the TV(" + " ".join(list_input_node) + ") = " + tv)
+            print("# of detected faults: " + str(det_cnt))
+            print(f"% of detected faults: {(det_cnt / fault_cnt) * 100:.2f}%")
+            print("Detected faults: ")
+            for res in res_out[0]:
+                print(res)
+
+            print("Not detected faults: ")
+            for res in res_out[1]:
+                print(res)
+
 
 def main():
-    # set flags for fault list, simulation, and fault simulation
-    ret_fault_list = True
-    ret_levelization = True  # levelization is needed in order to run the simulation
-    flg_fault_sim = True
     # bench files
-    # file_names = ["c17.bench", "c432.bench", "c499.bench", "c880.bench", "c1355.bench", "c1908.bench", "c2670.bench", "c3540.bench", "c5315.bench", "c6288.bench", "c7552.bench", "hw1.bench"]
+    file_names = ["c17.bench", "c432.bench", "c499.bench", "c880.bench", "c1355.bench", "c1908.bench", "c2670.bench", "c3540.bench", "c5315.bench", "c6288.bench", "c7552.bench", "hw1.bench"]
     # test bench files with known behavior
-    file_names = ['./my_benches/BM01.bench', './my_benches/BM02.bench', './my_benches/BM03.bench']
+    file_names_test = ['./my_benches/BM01.bench', './my_benches/BM02.bench', './my_benches/BM03.bench']
 
-    # select one bench file
-    for file_name in file_names:
-        # parsing the circuit
-        graph_circuit, symbol_table_nodes, list_input_node, list_output_node, fault_dict, dict_levelization = circuit_parsing(file_name, ret_fault_list, ret_levelization)
-
-        if ret_fault_list:
-            # print the number of faults and the full fault list
-            print_faults(fault_dict, file_name)
-
-        if ret_levelization:
-            # if levelization known it is possible to proceed with the simulation
-            # test vector
-            print("="*40)
-            print(file_name + " simulation")
-            tv = "0"*len(list_input_node)
-            # run the simulation
-            res0 = simulation(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv)
-            print_simulation_result(res0, list_input_node, tv)
-
-            tv = "1" * len(list_input_node)
-            # run the simulation
-            res1 = simulation(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv)
-            print_simulation_result(res1, list_input_node, tv)
-
-        if flg_fault_sim:
-            # if flag fault simulation is active
-            # print the menu and get the user choice for the fault simulation
-            choice, tv, fault = fault_sim_menu(list_input_node, fault_dict)
-
-            if choice == 1:
-                # Any TV any fault
-
-                # 1. Prepare input for simulation(...)
-                # 2. Get the result without fault
-                # 3. Force the fault by overriding the value in the boolean dictionary inside simulation
-                # 4. Get the result with the fault
-                # 5. Check if they are different => detectable, otherwise not
-
-            else:
-                # Any TV full fault list
-                # Same as above but iterate over all faults
-                # Keep track of the number of detectable faults, calculate the percentage, and print the percentage and total number
+    # starting point
+    init_menu(file_names_test)
 
 
 main()
