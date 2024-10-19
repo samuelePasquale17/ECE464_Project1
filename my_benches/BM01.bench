@@ -1,0 +1,17 @@
+# BENCH FILE 01
+# ABCDM = 00000 -> Z = 01
+# ABCDM = 11111 -> Z = 10
+INPUT(A)
+INPUT(B)
+INPUT(C)
+INPUT(D)
+E = OR(A, I)
+J = OR(F, G)
+F = XOR(B, D)
+INPUT(M)
+G = AND(B, C)
+H = OR(C, D)
+I = NOT(H)
+OUTPUT(M)
+Z = XOR(E, J)
+OUTPUT(Z)

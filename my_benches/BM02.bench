@@ -1,0 +1,15 @@
+# BENCH FILE 01
+# XYC = 000 -> BD = 00
+# XYC = 111 -> BD = 11
+A = XOR(X, Y)
+INPUT(X)
+INPUT(Y)
+I = NOT(X)
+E = AND(Y, C)
+F = NOT(A)
+G = AND(F, C)
+INPUT(C)
+OUTPUT(D)
+OUTPUT(B)
+D = XOR(A, C)
+B = OR(E, G)

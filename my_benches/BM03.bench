@@ -1,0 +1,21 @@
+# BENCH FILE 01
+# ABCDE = 00000 -> XYZ = 011
+# ABCDE = 11111 -> XYZ = 001
+X = AND(E, H)
+Y = BUFF(H)
+Z = NAND(H, L)
+INPUT(A)
+INPUT(B)
+F = NAND(A, B)
+INPUT(C)
+I = NOT(C)
+K = BUFF(D)
+J = NOT(I)
+L = AND(F, K)
+G = OR(B, F)
+H = XOR(G, J)
+OUTPUT(X)
+OUTPUT(Y)
+OUTPUT(Z)
+INPUT(D)
+INPUT(E)
