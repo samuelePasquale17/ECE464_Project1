@@ -858,7 +858,7 @@ def main():
     # bench files
     file_names = ["c17.bench", "c432.bench", "c499.bench", "c880.bench", "c1355.bench", "c1908.bench", "c2670.bench", "c3540.bench", "c5315.bench", "c6288.bench", "c7552.bench", "hw1.bench"]
     # test bench files with known behavior
-    file_names_test = ['./my_benches/BM01.bench', './my_benches/BM02.bench', './my_benches/BM03.bench']
+    # file_names_test = ['./my_benches/BM01.bench', './my_benches/BM02.bench', './my_benches/BM03.bench']
 
     # starting point
     init_menu(file_names)
