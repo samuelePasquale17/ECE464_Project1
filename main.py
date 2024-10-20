@@ -817,21 +817,21 @@ def init_menu(file_names):
         # generation of num_tvs test vectors
         test_vectors = []
         # number of test vectors generated
-        num_tvs = 25
+        num_tvs = 40
         for i in range(num_tvs + 1):
             test_vectors.append(test_vector_rand(list_input_node))
 
         # select coverage study granularity (i.e. number of TVs take into account at a time)
-        n = 5
+        n = 10
 
         # run for each subset of test vectors
         fault_counters = []
         fault_detections = []
         num_test_vectors = []
+        fault_detected = []
+        det_cnt = 0
         for i in range(int(num_tvs/n)):
             fault_cnt = 0
-            det_cnt = 0
-            fault_detected = []
             for tv in test_vectors[:(i * n)]:
                 # iterate over all possible faults
                 for key in fault_dict:
