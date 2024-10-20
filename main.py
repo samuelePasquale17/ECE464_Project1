@@ -5,6 +5,8 @@ from enum import Enum # enumeration to define the possible gate types
 from tabulate import tabulate # print the output with a good format
 from colorama import Fore, Style, init # print the output with colors
 from itertools import chain # to iterate over dictionary
+import random # for the random test vector generation
+import matplotlib.pyplot as plt # for the coverage study plot
 
 
 # init colorama
@@ -614,7 +616,7 @@ def res_cmp(res_no_fault, res_fault):
     return detect
 
 
-def simulation_fault(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv, fault, file_name):
+def simulation_fault(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv, fault):
     """
     Function that given a circuit, runs the simulation with a given fault
     :param graph_circuit: model of the circuit
@@ -624,7 +626,6 @@ def simulation_fault(graph_circuit, list_input_node, list_output_node, symbol_ta
     :param dict_levelization: levelization of the circuit
     :param tv: test vector
     :param fault: fault
-    :param file_name: name of the bench file
     :return: if the fault was detected or not and the outcome of the good and bad simulation respectively
     """
     # run simulation without fault
@@ -639,12 +640,50 @@ def simulation_fault(graph_circuit, list_input_node, list_output_node, symbol_ta
     return detect, res_no_fault, res_fault
 
 
+def test_vector_rand(list_input_node):
+    """
+    This function generates a random test vector (TV) with a length equal to the number of input nodes.
+    Each bit in the TV is either "0" or "1".
+
+    :param list_input_node: List of input nodes
+    :return: A string representing the random test vector
+    """
+    tv = "".join(random.choice("01") for _ in range(len(list_input_node)))
+    return tv
+
+
+def plot_coverage_study(num_test_vectors, fault_detections, file_name):
+    """
+    This function generates a plot showing how the number of test vectors affects fault detection for a given benchmark.
+
+    :param num_test_vectors: List of numbers representing the number of test vectors used
+    :param fault_detections: List of corresponding numbers representing the fault detections achieved
+    :param file_name: The name of the benchmark, used for the plot title
+    :return: None
+    """
+    # Create the plot
+    plt.figure(figsize=(8, 6))
+    plt.plot(num_test_vectors, fault_detections, marker='o', linestyle='-', color='b')
+
+    # Set plot labels and title
+    plt.xlabel('Number of Test Vectors')
+    plt.ylabel('Number of Fault Detections')
+    plt.title(f'Coverage Study for Benchmark: {file_name}')
+
+    # Enable grid for better readability
+    plt.grid(True)
+
+    # Show the plot
+    plt.show()
+
+
 def init_menu(file_names):
     """
     This function displays a menu to the user with three options:
     1. Fault listing
     2. Circuit simulation
     3. Fault simulation
+    4. Fault coverage study
 
     After the user selects an option, it asks the user to choose a benchmark from the provided list.
     The selected benchmark's name is stored in a variable called file_name, and the function allows
@@ -658,12 +697,13 @@ def init_menu(file_names):
     print("1. Fault listing")
     print("2. Circuit simulation")
     print("3. Fault simulation")
+    print("4. Fault coverage study")
 
     # Get the user's choice
-    choice = input("Enter 1, 2, or 3: ").strip()
-    while choice not in {"1", "2", "3"}:
-        print("Invalid selection. Please choose 1, 2, or 3.")
-        choice = input("Enter 1, 2, or 3: ").strip()
+    choice = input("Enter 1, 2, 3 or 4: ").strip()
+    while choice not in {"1", "2", "3", "4"}:
+        print("Invalid selection. Please choose 1, 2, 3, or 4.")
+        choice = input("Enter 1, 2, 3, or 4: ").strip()
 
     # Display the list of available benchmarks
     print("\nAvailable benchmarks:")
@@ -717,7 +757,7 @@ def init_menu(file_names):
         if choice == 1:
             # Any TV any fault
             # run simulation
-            detect, res_no_fault, res_fault = simulation_fault(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv, fault, file_name)
+            detect, res_no_fault, res_fault = simulation_fault(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv, fault)
             # print result of fault simulation
             if detect:
                 print("In " + file_name + " " + fault + " is detected by TV(" + " ".join(list_input_node) + ") = " + tv)
@@ -746,7 +786,7 @@ def init_menu(file_names):
             for key in fault_dict:
                 for fault in fault_dict[key]:
                     # run simulation
-                    detect, res_no_fault, res_fault = simulation_fault(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv, fault, file_name)
+                    detect, res_no_fault, res_fault = simulation_fault(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv, fault)
                     fault_cnt += 1
                     if detect:
                         # fault detected
@@ -769,6 +809,50 @@ def init_menu(file_names):
             for res in res_out[1]:
                 print(res)
 
+    elif choice == "4":
+        # Fault coverage study
+        # parsing the circuit
+        graph_circuit, symbol_table_nodes, list_input_node, list_output_node, fault_dict, dict_levelization = circuit_parsing(file_name, True, True)
+
+        # generation of num_tvs test vectors
+        test_vectors = []
+        # number of test vectors generated
+        num_tvs = 25
+        for i in range(num_tvs + 1):
+            test_vectors.append(test_vector_rand(list_input_node))
+
+        # select coverage study granularity (i.e. number of TVs take into account at a time)
+        n = 5
+
+        # run for each subset of test vectors
+        fault_counters = []
+        fault_detections = []
+        num_test_vectors = []
+        for i in range(int(num_tvs/n)):
+            fault_cnt = 0
+            det_cnt = 0
+            fault_detected = []
+            for tv in test_vectors[:(i * n)]:
+                # iterate over all possible faults
+                for key in fault_dict:
+                    for fault in fault_dict[key]:
+                        # run simulation
+                        detect, res_no_fault, res_fault = simulation_fault(graph_circuit, list_input_node, list_output_node, symbol_table_nodes, dict_levelization, tv, fault)
+                        fault_cnt += 1
+                        if detect and fault not in fault_detected:
+                            # increment number of detected faults if it has not been already detected before
+                            det_cnt += 1
+                            # add new detected fault
+                            fault_detected.append(fault)
+
+            # save result at the end of the tv subset
+            fault_counters.append(fault_cnt)
+            fault_detections.append(det_cnt)
+            num_test_vectors.append(i*n + 1)
+
+        # plot number of test vectors vs number of detected faults
+        plot_coverage_study(num_test_vectors, fault_detections, file_name)
+
 
 def main():
     # bench files
@@ -777,7 +861,7 @@ def main():
     file_names_test = ['./my_benches/BM01.bench', './my_benches/BM02.bench', './my_benches/BM03.bench']
 
     # starting point
-    init_menu(file_names_test)
+    init_menu(file_names)
 
 
 main()
